@@ -158,3 +158,16 @@ class GameMessage:
             "discussion": "⚠️ 討論時間剩下30秒！請總結發言！"
         }
         return TextSendMessage(text=warnings.get(phase, "時間即將結束！"))
+
+    @staticmethod
+    def get_join_success(player_name: str) -> TextSendMessage:
+        """
+        產生玩家成功加入遊戲的訊息
+        
+        Args:
+            player_name (str): 玩家名稱
+            
+        Returns:
+            TextSendMessage: Line 訊息物件
+        """
+        return TextSendMessage(text=f"{player_name} 成功加入遊戲！")
