@@ -1,7 +1,7 @@
 from linebot import LineBotApi
 from linebot.models import MessageEvent, TextMessage
 from typing import Dict, List
-from ..game.room import Room
+from ..game.room import GameRoom
 from ..game.state import GameState
 from .message import GameMessage
 from ..utils.storage import GameStorage
@@ -12,7 +12,7 @@ from ..utils.timer import GameTimer
 class MessageHandler:
     def __init__(self, line_bot_api: LineBotApi):
         self.line_bot_api = line_bot_api
-        self.rooms: Dict[str, Room] = {}
+        self.rooms: Dict[str, GameRoom] = {}
         self.storage = GameStorage()
         self.logger = GameLogger()
         self.spectators: Dict[str, List[str]] = {}  # group_id -> List[user_id]
@@ -52,7 +52,7 @@ class MessageHandler:
 
         if command == '/join':
             if group_id not in self.rooms:
-                self.rooms[group_id] = Room(group_id)
+                self.rooms[group_id] = GameRoom(group_id)
 
             room = self.rooms[group_id]
             user_profile = self.line_bot_api.get_group_member_profile(group_id, user_id)
@@ -156,7 +156,7 @@ class MessageHandler:
             return parts[1][1:]  # 移除 @ 符號
         return None
 
-    def log_and_broadcast(self, room: Room, message: str):
+    def log_and_broadcast(self, room: GameRoom, message: str):
         """記錄遊戲事件並廣播給玩家和觀戰者"""
         self.logger.log_game_event(room.room_id, message)
         
@@ -177,7 +177,7 @@ class MessageHandler:
                         )
                 break
 
-    def handle_skill_usage(self, room: Room, user_id: str, target_id: str, reply_token: str):
+    def handle_skill_usage(self, room: GameRoom, user_id: str, target_id: str, reply_token: str):
         try:
             if user_id not in room.players:
                 raise GameError("not_in_game")
@@ -215,7 +215,7 @@ class MessageHandler:
                 GameMessage.get_error_message(str(e))
             )
 
-    def handle_voting(self, room: Room, voter_id: str, target_id: str, reply_token: str):
+    def handle_voting(self, room: GameRoom, voter_id: str, target_id: str, reply_token: str):
         if voter_id not in room.players or target_id not in room.players:
             return
 
@@ -239,7 +239,7 @@ class MessageHandler:
         if room.check_voting_complete():
             self.handle_voting_result(room)
 
-    def update_game_status(self, room: Room, reply_token: str):
+    def update_game_status(self, room: GameRoom, reply_token: str):
         players_info = "\n".join([
             f"{'✅' if player.is_ready else '❌'} {player.display_name}"
             for player in room.players.values()
@@ -249,7 +249,7 @@ class MessageHandler:
             GameMessage.get_game_status(players_info)
         )
 
-    def start_game(self, room: Room, reply_token: str):
+    def start_game(self, room: GameRoom, reply_token: str):
         # 發送遊戲開始通知
         self.line_bot_api.reply_message(
             reply_token,
@@ -266,7 +266,7 @@ class MessageHandler:
                 )
             )
 
-    def start_day_phase(self, room: Room):
+    def start_day_phase(self, room: GameRoom):
         room.game_state = GameState.DAY
         room.process_night_actions()
         
@@ -284,7 +284,7 @@ class MessageHandler:
                 )
                 break
 
-    def start_voting_phase(self, room: Room, group_id: str):
+    def start_voting_phase(self, room: GameRoom, group_id: str):
         room.game_state = GameState.VOTING
         self.line_bot_api.push_message(
             group_id,
@@ -313,7 +313,7 @@ class MessageHandler:
         if warning_time > 0:
             threading.Timer(warning_time, warning_callback).start()
 
-    def handle_voting_result(self, room: Room):
+    def handle_voting_result(self, room: GameRoom):
         eliminated_player = room.process_votes()
         
         for group_id, game_room in self.rooms.items():
@@ -336,7 +336,7 @@ class MessageHandler:
                     )
                 break
 
-    def announce_winner(self, room: Room, winner: str):
+    def announce_winner(self, room: GameRoom, winner: str):
         for group_id, game_room in self.rooms.items():
             if game_room == room:
                 self.line_bot_api.push_message(
@@ -346,7 +346,7 @@ class MessageHandler:
                 del self.rooms[group_id]
                 break
 
-    def end_game(self, room: Room, winner: str):
+    def end_game(self, room: GameRoom, winner: str):
         # 更新玩家統計
         for player in room.players.values():
             self.player_stats.update_player_stats(

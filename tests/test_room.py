@@ -1,11 +1,11 @@
 import unittest
-from src.game.room import Room
+from src.game.room import GameRoom
 from src.game.state import GameState
 from src.game.role import RoleType
 
 class TestRoom(unittest.TestCase):
     def setUp(self):
-        self.room = Room("test_room")
+        self.room = GameRoom("test_room")
         
     def create_test_players(self, count: int):
         """創建指定數量的測試玩家"""

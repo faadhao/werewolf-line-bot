@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import Mock, patch
 from linebot.models import MessageEvent, TextMessage, Source
 from src.bot.handler import MessageHandler
-from src.game.room import Room
+from src.game.room import GameRoom
 from src.game.state import GameState
 from src.game.role import RoleType
 
@@ -37,7 +37,7 @@ class TestMessageHandler(unittest.TestCase):
 
     def test_ready_command(self):
         # 設置遊戲房間和玩家
-        room = Room(self.group_id)
+        room = GameRoom(self.group_id)
         room.add_player(self.user_id, "Test Player")
         self.handler.rooms[self.group_id] = room
         
@@ -50,7 +50,7 @@ class TestMessageHandler(unittest.TestCase):
     @patch('random.shuffle')  # 防止角色隨機分配
     def test_start_game(self, mock_shuffle):
         # 創建足夠的測試玩家
-        room = Room(self.group_id)
+        room = GameRoom(self.group_id)
         for i in range(6):
             user_id = f"test_user_{i}"
             room.add_player(user_id, f"Player {i}")
@@ -65,7 +65,7 @@ class TestMessageHandler(unittest.TestCase):
         self.assertEqual(room.day_count, 1)
 
     def test_invalid_command_in_wrong_phase(self):
-        room = Room(self.group_id)
+        room = GameRoom(self.group_id)
         room.game_state = GameState.NIGHT
         self.handler.rooms[self.group_id] = room
         

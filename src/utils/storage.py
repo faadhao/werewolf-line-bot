@@ -1,7 +1,7 @@
 import json
 import os
 from typing import Dict
-from ..game.room import Room
+from ..game.room import GameRoom
 from ..game.player import Player
 from ..game.role import Role, RoleType
 
@@ -10,7 +10,7 @@ class GameStorage:
         self.storage_dir = storage_dir
         os.makedirs(storage_dir, exist_ok=True)
 
-    def save_game(self, room: Room) -> bool:
+    def save_game(self, room: GameRoom) -> bool:
         try:
             game_data = {
                 "room_id": room.room_id,
@@ -39,7 +39,7 @@ class GameStorage:
             print(f"保存遊戲失敗: {str(e)}")
             return False
 
-    def load_game(self, room_id: str) -> Room:
+    def load_game(self, room_id: str) -> GameRoom:
         try:
             file_path = os.path.join(self.storage_dir, f"{room_id}.json")
             if not os.path.exists(file_path):
@@ -48,7 +48,7 @@ class GameStorage:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
 
-            room = Room(room_id)
+            room = GameRoom(room_id)
             room.game_state = GameState(data["game_state"])
             room.day_count = data["day_count"]
             room.witch_potion = data["witch_potion"]
