@@ -3,8 +3,8 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage
 import os
-from bot.handler import MessageHandler
-from utils.config import Config
+from src.bot.handler import MessageHandler
+from src.utils.config import Config
 
 app = Flask(__name__)
 
