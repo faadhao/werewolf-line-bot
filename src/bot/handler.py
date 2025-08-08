@@ -20,6 +20,12 @@ class MessageHandler:
         self.timer = GameTimer()
 
     def handle_text_message(self, event: MessageEvent):
+        # 區分群組訊息和私聊訊息
+        if event.source.type == 'user':  # 私聊訊息
+            self.handle_private_message(event)
+            return
+            
+        # 群組訊息處理
         if not hasattr(event.source, 'group_id'):
             self.line_bot_api.reply_message(
                 event.reply_token,
@@ -195,20 +201,12 @@ class MessageHandler:
                 raise GameError("wrong_phase")
                 
             result = room.use_skill(player, target)
-            self.line_bot_api.push_message(
-                user_id,
-                TextMessage(text=result)
-            )
+            room.night_action_count += 1
             
-            # 記錄技能使用
-            self.logger.log_game_event(
-                room.room_id, 
-                f"{player.role.get_role_name()} 使用了技能"
-            )
-
-            if room.check_night_phase_complete():
+            # 檢查夜晚階段是否結束
+            if room.check_night_complete():
                 self.start_day_phase(room)
-                
+            
         except GameError as e:
             self.line_bot_api.reply_message(
                 reply_token,
@@ -240,13 +238,21 @@ class MessageHandler:
             self.handle_voting_result(room)
 
     def update_game_status(self, room: GameRoom, reply_token: str):
+        # 準備玩家列表資訊
         players_info = "\n".join([
-            f"{'✅' if player.is_ready else '❌'} {player.display_name}"
+            f"{'✅' if player.is_ready else '❌'} {player.display_name}" + 
+            (f" (已死亡)" if not player.is_alive() and room.game_state != GameState.WAITING else "")
             for player in room.players.values()
         ])
+        
+        # 發送遊戲狀態
         self.line_bot_api.reply_message(
             reply_token,
-            GameMessage.get_game_status(players_info)
+            GameMessage.get_game_status(
+                room.game_state,
+                players_info,
+                room.day_count
+            )
         )
 
     def start_game(self, room: GameRoom, reply_token: str):
@@ -267,8 +273,8 @@ class MessageHandler:
             )
 
     def start_day_phase(self, room: GameRoom):
-        room.game_state = GameState.DAY
-        room.process_night_actions()
+        # 處理夜晚行動結果
+        room.start_day_phase()
         
         # 檢查遊戲是否結束
         winner = room.check_game_end()
@@ -276,20 +282,20 @@ class MessageHandler:
             self.announce_winner(room, winner)
             return
 
+        # 通知所有玩家進入白天
         for group_id, game_room in self.rooms.items():
             if game_room == room:
-                self.line_bot_api.push_message(
-                    group_id,
-                    GameMessage.get_day_phase(room.day_count)
+                self.line_bot_api.multicast(
+                    [p.user_id for p in room.players.values()],
+                    [GameMessage.get_day_phase(room.day_count)]
                 )
                 break
 
-    def start_voting_phase(self, room: GameRoom, group_id: str):
+        # 開始投票階段
+        self.start_voting_phase(room)
+
+    def start_voting_phase(self, room: GameRoom):
         room.game_state = GameState.VOTING
-        self.line_bot_api.push_message(
-            group_id,
-            GameMessage.get_voting_start()
-        )
         
         # 設置投票計時器
         def voting_timeout():
@@ -358,4 +364,69 @@ class MessageHandler:
                     ),
                     "role": player.role.get_role_name()
                 }
+            )
+
+    def handle_private_message(self, event: MessageEvent):
+        user_id = event.source.user_id
+        message = event.message.text
+        
+        # 尋找玩家所在的遊戲房間
+        current_room = None
+        for room in self.rooms.values():
+            if user_id in room.players:
+                current_room = room
+                break
+        
+        if not current_room:
+            self.line_bot_api.reply_message(
+                event.reply_token,
+                GameMessage.get_error_message("not_in_game")
+            )
+            return
+
+        player = current_room.players[user_id]
+
+        if message.startswith('/skill'):
+            # 檢查是否是死亡玩家（獵人或狼王可以死後使用技能）
+            if not player.is_alive() and player.role.role_type not in [RoleType.HUNTER, RoleType.WOLF_KING]:
+                self.line_bot_api.reply_message(
+                    event.reply_token,
+                    GameMessage.get_error_message("already_dead")
+                )
+                return
+
+            # 檢查是否在正確的遊戲階段
+            if current_room.game_state != GameState.NIGHT:
+                self.line_bot_api.reply_message(
+                    event.reply_token,
+                    GameMessage.get_error_message("wrong_phase")
+                )
+                return
+
+            # 檢查是否已經使用過技能
+            if player.role.skill_used and player.role.role_type in [RoleType.WITCH, RoleType.SEER]:
+                self.line_bot_api.reply_message(
+                    event.reply_token,
+                    GameMessage.get_error_message("skill_used")
+                )
+                return
+
+            # 檢查是否是狼人團隊成員且不是單獨行動的時間
+            if (player.role.role_type == RoleType.WEREWOLF and 
+                not current_room.is_werewolf_action_time):
+                self.line_bot_api.reply_message(
+                    event.reply_token,
+                    GameMessage.get_error_message("not_your_turn")
+                )
+                return
+                 
+            # 解析目標玩家
+            target_id = self.parse_target_user_id(message)
+            if target_id:
+                self.handle_skill_usage(current_room, user_id, target_id, event.reply_token)
+        else:
+            # 其他私訊命令的處理
+            self.line_bot_api.reply_message(
+                event.reply_token,
+                GameMessage.get_error_message("invalid_command")
             )

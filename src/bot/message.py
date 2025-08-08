@@ -16,8 +16,8 @@ class GameMessage:
             "/start - 開始遊戲\n"
             "/exit - 離開遊戲\n\n"
             "🎮 遊戲中指令：\n"
-            "/vote [@玩家] - 投票處決\n"
-            "/skill [@玩家] - 使用技能\n"
+            "/vote [@玩家] - 投票處決（在群組中使用）\n"
+            "/skill [@玩家] - 使用技能（私訊機器人使用）\n"
             "/status - 查看遊戲狀態"
         )
         return TextSendMessage(text=help_text)
@@ -31,8 +31,10 @@ class GameMessage:
             "wrong_phase": "現在不是使用此指令的時機！",
             "already_dead": "您已經死亡，無法執行此操作！",
             "invalid_target": "無效的目標玩家！",
-            "skill_used": "您已經使用過技能了！",
-            "not_your_turn": "現在不是您的回合！"
+            "skill_used": "您已經使用過這個技能了！",
+            "not_your_turn": "現在不是您的回合！請等待通知。",
+            "invalid_command": "無效的私訊命令。請使用 /skill 來使用技能。",
+            "werewolf_must_wait": "狼人必須等待所有狼人一起行動。",
         }
         return TextSendMessage(text=error_messages.get(error_type, "發生未知錯誤！"))
 
@@ -43,17 +45,19 @@ class GameMessage:
             RoleType.WEREWOLF: "您是狼人，每晚可以殺死一名玩家。請小心隱藏身份！",
             RoleType.SEER: "您是預言家，每晚可以查驗一名玩家的身份。",
             RoleType.WITCH: "您是女巫，擁有一瓶解藥和一瓶毒藥。每種藥只能使用一次！",
-            RoleType.HUNTER: "您是獵人，死亡時可以開槍帶走一名玩家。"
+            RoleType.HUNTER: "您是獵人，死亡時可以開槍帶走一名玩家。",
+            RoleType.WOLF_KING: "您是狼王，死亡時可以帶走一名玩家。請與其他狼人合作！",
         }
         return TextSendMessage(text=instructions.get(role_type, "未知角色"))
 
     @staticmethod
     def get_night_action_prompt(role_type: RoleType) -> TextSendMessage:
         prompts = {
-            RoleType.WEREWOLF: "請選擇要殺害的對象：\n使用 /skill @玩家名稱",
-            RoleType.SEER: "請選擇要查驗的對象：\n使用 /skill @玩家名稱",
-            RoleType.WITCH: "請選擇要使用藥水的對象：\n使用 /skill @玩家名稱",
-            RoleType.HUNTER: "您可以選擇帶走一名玩家：\n使用 /skill @玩家名稱"
+            RoleType.WEREWOLF: "請私訊選擇要殺害的對象：\n使用 /skill @玩家名稱",
+            RoleType.SEER: "請私訊選擇要查驗的對象：\n使用 /skill @玩家名稱",
+            RoleType.WITCH: "請私訊選擇要使用藥水的對象：\n使用 /skill @玩家名稱",
+            RoleType.HUNTER: "請私訊選擇要帶走的玩家：\n使用 /skill @玩家名稱",
+            RoleType.WOLF_KING: "請私訊選擇要帶走的玩家：\n使用 /skill @玩家名稱",
         }
         return TextSendMessage(text=prompts.get(role_type, ""))
 
@@ -171,3 +175,29 @@ class GameMessage:
             TextSendMessage: Line 訊息物件
         """
         return TextSendMessage(text=f"{player_name} 成功加入遊戲！")
+
+    @staticmethod
+    def get_game_status(game_state: GameState, players_info: str, day_count: int = 0) -> TextSendMessage:
+        status_text = "🎮 遊戲狀態\n"
+        
+        # 添加遊戲階段資訊
+        phase_info = {
+            GameState.WAITING: "等待玩家中...",
+            GameState.NIGHT: f"第 {day_count} 天夜晚",
+            GameState.DAY: f"第 {day_count} 天白天",
+            GameState.VOTING: "投票階段",
+            GameState.ENDED: "遊戲結束"
+        }
+        status_text += f"\n📌 當前階段：{phase_info.get(game_state, '未知階段')}\n"
+        
+        # 添加玩家資訊
+        status_text += "\n👥 玩家列表：\n"
+        status_text += players_info
+
+        # 如果遊戲還沒開始，添加最小玩家數提示
+        if game_state == GameState.WAITING:
+            status_text += "\n\n⚠️ 需要至少 6 名玩家才能開始遊戲"
+            status_text += "\n✅ 表示已準備"
+            status_text += "\n❌ 表示未準備"
+        
+        return TextSendMessage(text=status_text)
