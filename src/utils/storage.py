@@ -4,6 +4,7 @@ from typing import Dict
 from ..game.room import GameRoom
 from ..game.player import Player
 from ..game.role import Role, RoleType
+from ..game.state import GameState
 
 class GameStorage:
     def __init__(self, storage_dir: str = "game_data"):

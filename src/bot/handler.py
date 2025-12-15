@@ -1,8 +1,11 @@
 from linebot import LineBotApi
-from linebot.models import MessageEvent, TextMessage
+from linebot.models import MessageEvent, TextMessage, TextSendMessage
 from typing import Dict, List
+import threading
 from ..game.room import GameRoom
 from ..game.state import GameState
+from ..game.errors import GameError
+from ..game.role import RoleType
 from .message import GameMessage
 from ..utils.storage import GameStorage
 from ..utils.logger import GameLogger
@@ -151,6 +154,46 @@ class MessageHandler:
                 )
             return
 
+        if command == '/exit':
+            if group_id in self.rooms:
+                room = self.rooms[group_id]
+                if user_id in room.players:
+                    if room.game_state == GameState.WAITING:
+                        # 遊戲未開始，允許離開
+                        if room.remove_player(user_id):
+                            user_profile = self.line_bot_api.get_group_member_profile(group_id, user_id)
+                            self.line_bot_api.reply_message(
+                                reply_token,
+                                TextSendMessage(text=f"{user_profile.display_name} 已離開遊戲")
+                            )
+                    else:
+                        # 遊戲已開始，不允許離開
+                        self.line_bot_api.reply_message(
+                            reply_token,
+                            GameMessage.get_error_message("game_started")
+                        )
+            return
+
+        if command == '/status':
+            if group_id in self.rooms:
+                room = self.rooms[group_id]
+                self.update_game_status(room, reply_token)
+            else:
+                self.line_bot_api.reply_message(
+                    reply_token,
+                    TextSendMessage(text="目前沒有進行中的遊戲")
+                )
+            return
+
+        if command == '/config':
+            if group_id in self.rooms:
+                room = self.rooms[group_id]
+                self.line_bot_api.reply_message(
+                    reply_token,
+                    GameMessage.get_config_status(room.config.config)
+                )
+            return
+
         # 在每次重要操作後保存遊戲狀態
         if group_id in self.rooms:
             self.storage.save_game(self.rooms[group_id])
@@ -276,26 +319,71 @@ class MessageHandler:
         # 處理夜晚行動結果
         room.start_day_phase()
         
+        # 廣播夜晚死亡訊息
+        for group_id, game_room in self.rooms.items():
+            if game_room == room:
+                # 公告昨晚死亡的玩家
+                dead_players = []
+                for player in room.players.values():
+                    if not player.is_alive() and player.user_id in room.night_actions.values():
+                        dead_players.append(player)
+                
+                if dead_players:
+                    for player in dead_players:
+                        self.line_bot_api.push_message(
+                            group_id,
+                            GameMessage.get_death_announcement(
+                                player.display_name,
+                                player.role.get_role_name()
+                            )
+                        )
+                else:
+                    self.line_bot_api.push_message(
+                        group_id,
+                        TextSendMessage(text="昨晚是平安夜，沒有玩家死亡。")
+                    )
+                
+                # 發送白天階段訊息
+                self.line_bot_api.push_message(
+                    group_id,
+                    GameMessage.get_day_phase(room.day_count)
+                )
+                
+                # 發送存活玩家列表
+                alive_players = room.get_alive_players()
+                self.line_bot_api.push_message(
+                    group_id,
+                    GameMessage.get_game_summary(alive_players, room.day_count)
+                )
+                break
+        
         # 檢查遊戲是否結束
         winner = room.check_game_end()
         if winner:
             self.announce_winner(room, winner)
             return
 
-        # 通知所有玩家進入白天
-        for group_id, game_room in self.rooms.items():
-            if game_room == room:
-                self.line_bot_api.multicast(
-                    [p.user_id for p in room.players.values()],
-                    [GameMessage.get_day_phase(room.day_count)]
-                )
-                break
-
         # 開始投票階段
         self.start_voting_phase(room)
 
     def start_voting_phase(self, room: GameRoom):
         room.game_state = GameState.VOTING
+        
+        # 找到群組ID
+        group_id = None
+        for gid, game_room in self.rooms.items():
+            if game_room == room:
+                group_id = gid
+                break
+        
+        if not group_id:
+            return
+        
+        # 發送投票開始訊息
+        self.line_bot_api.push_message(
+            group_id,
+            GameMessage.get_voting_start()
+        )
         
         # 設置投票計時器
         def voting_timeout():

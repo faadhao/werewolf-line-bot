@@ -3,6 +3,7 @@ import random
 from .player import Player
 from .role import Role, RoleType
 from .state import GameState
+from ..utils.config import GameConfig
 
 class GameRoom:
     def __init__(self, room_id: str):
@@ -14,6 +15,10 @@ class GameRoom:
         self.witch_potion = {"heal": True, "poison": True}  # 女巫的藥水狀態
         self.current_turn = 0
         self.delayed_actions = []  # 延遲執行的動作
+        self.night_action_count = 0  # 夜晚行動計數
+        self.is_werewolf_action_time = False  # 是否是狼人行動時間
+        self.config = GameConfig()  # 遊戲配置
+        self.votes = {}  # 投票記錄
 
     def add_player(self, user_id: str, display_name: str) -> bool:
         if user_id not in self.players and self.game_state == GameState.WAITING:
@@ -89,6 +94,8 @@ class GameRoom:
             return self.handle_witch_action(player, target)
         elif player.role.role_type == RoleType.HUNTER:
             return self.handle_hunter_shoot(player, target)
+        elif player.role.role_type == RoleType.GUARD:
+            return self.handle_guard_protect(player, target)
         return "您沒有特殊技能可以使用"
 
     def handle_werewolf_kill(self, player: Player, target: Player) -> str:
@@ -125,6 +132,21 @@ class GameRoom:
             self.night_actions["hunter_shoot"] = target.user_id
             return f"你選擇射殺 {target.display_name}"
         return "獵人技能只能在死亡時使用"
+
+    def handle_guard_protect(self, player: Player, target: Player) -> str:
+        """處理守衛保護技能"""
+        if not player.is_alive():
+            return "你已經死亡，無法使用技能"
+        
+        # 檢查是否連續保護同一人（如果配置不允許）
+        last_protected = self.night_actions.get("last_guard_protect")
+        if (not self.config.config["special_effects"]["guard_self_protect"] and 
+            last_protected == target.user_id):
+            return "你不能連續兩晚保護同一個人！"
+        
+        self.night_actions["guard_protect"] = target.user_id
+        self.night_actions["last_guard_protect"] = target.user_id
+        return f"你選擇保護 {target.display_name}"
 
     def process_night_actions(self):
         self.current_turn += 1
@@ -178,6 +200,7 @@ class GameRoom:
     def cast_vote(self, voter_id: str, target_id: str):
         if voter_id in self.players and target_id in self.players:
             self.players[target_id].add_vote(voter_id)
+            self.votes[voter_id] = target_id
 
     def process_votes(self) -> Optional[Player]:
         max_votes = 0
@@ -191,6 +214,9 @@ class GameRoom:
 
         if eliminated_player:
             eliminated_player.role.kill()
+        
+        # 清空投票記錄
+        self.votes.clear()
 
         return eliminated_player
 
@@ -223,3 +249,45 @@ class GameRoom:
         self.game_state = GameState.NIGHT
         self.day_count += 1
         self.night_actions.clear()
+        self.night_action_count = 0
+        self.is_werewolf_action_time = True
+
+    def start_day_phase(self):
+        """處理夜晚結束，進入白天"""
+        self.process_night_actions()
+        self.game_state = GameState.DAY
+        self.night_action_count = 0
+        self.is_werewolf_action_time = False
+
+    def check_night_complete(self) -> bool:
+        """檢查夜晚階段是否完成"""
+        required_actions = set()
+        
+        # 檢查狼人是否行動
+        werewolves = self.get_werewolves()
+        if werewolves:
+            required_actions.add("werewolf_kill")
+        
+        # 檢查預言家是否行動
+        seer = [p for p in self.players.values() 
+                if p.is_alive() and p.role.role_type == RoleType.SEER]
+        if seer:
+            required_actions.add("seer_check")
+        
+        # 女巫和獵人的行動是可選的
+        return all(action in self.night_actions for action in required_actions)
+
+    def check_voting_complete(self) -> bool:
+        """檢查投票是否完成"""
+        alive_players = self.get_alive_players()
+        voted_players = set(self.votes.keys())
+        
+        # 所有存活玩家都已投票
+        return len(voted_players) >= len(alive_players)
+
+    def get_vote_results(self) -> Dict[str, int]:
+        """獲得投票結果統計"""
+        vote_counts = {}
+        for target_id in self.votes.values():
+            vote_counts[target_id] = vote_counts.get(target_id, 0) + 1
+        return vote_counts

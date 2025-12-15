@@ -14,11 +14,18 @@ class GameMessage:
             "/join - 加入遊戲\n"
             "/ready - 準備開始\n"
             "/start - 開始遊戲\n"
-            "/exit - 離開遊戲\n\n"
+            "/exit - 離開遊戲（僅限等待階段）\n"
+            "/status - 查看遊戲狀態\n\n"
             "🎮 遊戲中指令：\n"
-            "/vote [@玩家] - 投票處決（在群組中使用）\n"
-            "/skill [@玩家] - 使用技能（私訊機器人使用）\n"
-            "/status - 查看遊戲狀態"
+            "/vote @玩家 - 投票處決（在群組中使用）\n"
+            "/skill @玩家 - 使用技能（私訊機器人使用）\n\n"
+            "📊 其他指令：\n"
+            "/spectate - 進入觀戰模式\n"
+            "/history - 查看遊戲記錄\n"
+            "/stats - 查看個人統計\n"
+            "/time - 查看剩餘時間\n"
+            "/tip - 獲得遊戲小提示\n"
+            "/config - 查看遊戲配置"
         )
         return TextSendMessage(text=help_text)
 
@@ -47,6 +54,7 @@ class GameMessage:
             RoleType.WITCH: "您是女巫，擁有一瓶解藥和一瓶毒藥。每種藥只能使用一次！",
             RoleType.HUNTER: "您是獵人，死亡時可以開槍帶走一名玩家。",
             RoleType.WOLF_KING: "您是狼王，死亡時可以帶走一名玩家。請與其他狼人合作！",
+            RoleType.GUARD: "您是守衛，每晚可以保護一名玩家免受狼人攻擊。",
         }
         return TextSendMessage(text=instructions.get(role_type, "未知角色"))
 
@@ -58,6 +66,7 @@ class GameMessage:
             RoleType.WITCH: "請私訊選擇要使用藥水的對象：\n使用 /skill @玩家名稱",
             RoleType.HUNTER: "請私訊選擇要帶走的玩家：\n使用 /skill @玩家名稱",
             RoleType.WOLF_KING: "請私訊選擇要帶走的玩家：\n使用 /skill @玩家名稱",
+            RoleType.GUARD: "請私訊選擇要保護的對象：\n使用 /skill @玩家名稱",
         }
         return TextSendMessage(text=prompts.get(role_type, ""))
 
@@ -201,3 +210,18 @@ class GameMessage:
             status_text += "\n❌ 表示未準備"
         
         return TextSendMessage(text=status_text)
+
+    @staticmethod
+    def get_night_phase(day_count: int) -> TextSendMessage:
+        """夜晚階段訊息"""
+        return TextSendMessage(text=f"🌙 第 {day_count} 天夜晚降臨...\n\n各角色請私訊機器人使用技能！")
+
+    @staticmethod
+    def get_role_notice(player_name: str, role_name: str) -> TextSendMessage:
+        """角色通知訊息"""
+        return TextSendMessage(text=f"🎭 {player_name}，你的角色是：{role_name}\n\n請保密你的身份！")
+
+    @staticmethod
+    def get_day_phase(day_count: int) -> TextSendMessage:
+        """白天階段訊息"""
+        return TextSendMessage(text=f"☀️ 第 {day_count} 天白天到來...\n\n請開始討論並準備投票！")

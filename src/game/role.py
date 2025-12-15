@@ -46,3 +46,11 @@ class Role:
         
         for effect in expired_effects:
             del self.special_effects[effect]
+
+    def kill(self):
+        """殺死此角色"""
+        self.is_alive = False
+
+    def get_role_name(self) -> str:
+        """獲取角色名稱"""
+        return self.role_type.value
